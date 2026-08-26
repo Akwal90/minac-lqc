@@ -653,28 +653,29 @@
 
   <p class="footer">
     Mssn Ikorodu North Area Council &nbsp;·&nbsp;
-    <button type="button" class="admin-link" id="adminOpen">View submissions (organizers)</button>
+    <a class="admin-link" id="adminOpen" href="#" target="_blank" rel="noopener">Open registrations sheet (organizers)</a>
   </p>
 </div>
 
-<!-- Admin modal -->
-<div class="modal-backdrop" id="adminModal">
-  <div class="modal">
-    <div class="modal-head">
-      <h3>Registrations</h3>
-      <div class="modal-actions">
-        <button class="pill-btn primary" id="exportCsv">Export CSV</button>
-        <button class="pill-btn danger" id="clearAll">Clear all</button>
-        <button class="close-x" id="adminClose">&times;</button>
-      </div>
-    </div>
-    <div class="stat-row" id="statRow"></div>
-    <div id="adminContent"></div>
-  </div>
-</div>
-
 <script>
-  const STORAGE_KEY = 'lqc2026-registrations';
+  /* =====================================================================
+     ADMIN SETUP — do this once before you publish the page:
+     1. Create a new Google Sheet (e.g. "Lagos Qur'an Competition 2026").
+     2. In it, go to Extensions > Apps Script, delete any starter code,
+        and paste in the script from the instructions I gave you in chat.
+     3. Deploy > New deployment > type "Web app" > Execute as "Me" >
+        Who has access "Anyone" > Deploy. Copy the Web app URL.
+     4. Paste that URL below as SHEET_WEB_APP_URL.
+     5. Paste the Google Sheet's own share link below as SHEET_VIEW_URL —
+        this is the link the "Open registrations sheet" footer button opens.
+        Keep the sheet's sharing setting as "Restricted" so only you (and
+        anyone you explicitly add) can open it.
+  ===================================================================== */
+  const SHEET_WEB_APP_URL = "https://script.google.com/macros/s/AKfycby7MOfH1cCgQQVXAEZmwYjDeuHZBZIJTKG-AjMIRVhwiU2iS_rmtwMQfTIyTjRV-1Nt/exec";
+  const SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1n99qewWtuEdiC_f3VCTJKtQ5p2T63c3W0lOw8639Cks/edit?usp=sharing";
+
+  document.getElementById('adminOpen').href = SHEET_VIEW_URL;
+
   const categories = {
     cat1: { label: "12 yrs & Below", juz: "5 Juz (Consecutive)", maxAge: 12 },
     cat2: { label: "18 yrs & Below", juz: "10 Juz (Consecutive)", maxAge: 18 },
@@ -773,17 +774,17 @@
     return `LQC26-${rand}`;
   }
 
-  async function loadAll() {
-    try {
-      const res = await window.storage.get(STORAGE_KEY, true);
-      return res && res.value ? JSON.parse(res.value) : [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  async function saveAll(list) {
-    await window.storage.set(STORAGE_KEY, JSON.stringify(list), true);
+  async function sendToSheet(entry) {
+    // Apps Script web apps don't return readable CORS responses to fetch(),
+    // so we fire the request in 'no-cors' mode and treat a resolved promise
+    // (no network-level error) as success — same pattern used for the
+    // Relimart order-backup webhook.
+    await fetch(SHEET_WEB_APP_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(entry)
+    });
   }
 
   form.addEventListener('submit', async (e) => {
@@ -817,12 +818,10 @@
     };
 
     try {
-      const list = await loadAll();
-      list.push(entry);
-      await saveAll(list);
+      await sendToSheet(entry);
       showSuccess(entry);
     } catch (err) {
-      alert('Something went wrong saving your registration. Please try again.');
+      alert('Something went wrong saving your registration. Please check your internet connection and try again.');
       submitBtn.disabled = false;
       submitBtn.textContent = 'Complete Registration';
     }
@@ -863,138 +862,6 @@
     });
   }
 
-  /* ---------------- Admin panel (PIN protected) ---------------- */
-  // Change this PIN to whatever you like before you publish the page.
-  const ADMIN_PIN = "IKNAC2026";
-  let adminAuthed = false;
-
-  const adminModal = document.getElementById('adminModal');
-  const modalActions = document.querySelector('.modal-actions');
-  const statRow = document.getElementById('statRow');
-  const adminContent = document.getElementById('adminContent');
-
-  document.getElementById('adminOpen').addEventListener('click', () => {
-    adminModal.classList.add('open');
-    if (adminAuthed) {
-      renderAdmin();
-    } else {
-      showLockScreen();
-    }
-  });
-  document.getElementById('adminClose').addEventListener('click', () => adminModal.classList.remove('open'));
-  adminModal.addEventListener('click', (e) => { if (e.target === adminModal) adminModal.classList.remove('open'); });
-
-  function showLockScreen(errorMsg) {
-    modalActions.style.display = 'none';
-    statRow.innerHTML = '';
-    adminContent.innerHTML = `
-      <div class="lock-screen">
-        <div class="lock-icon">🔒</div>
-        <p>Enter the organizer PIN to view registrations.</p>
-        <div class="lock-error">${errorMsg || ''}</div>
-        <input type="password" id="pinInput" inputmode="numeric" placeholder="PIN" autofocus>
-        <br>
-        <button type="button" class="pill-btn primary" id="pinSubmit">Unlock</button>
-      </div>
-    `;
-    const pinInput = document.getElementById('pinInput');
-    const trySubmit = () => {
-      if (pinInput.value === ADMIN_PIN) {
-        adminAuthed = true;
-        modalActions.style.display = 'flex';
-        renderAdmin();
-      } else {
-        showLockScreen('Incorrect PIN. Try again.');
-      }
-    };
-    document.getElementById('pinSubmit').addEventListener('click', trySubmit);
-    pinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') trySubmit(); });
-    pinInput.focus();
-  }
-
-  async function renderAdmin() {
-    const list = await loadAll();
-    const statRow = document.getElementById('statRow');
-    const content = document.getElementById('adminContent');
-
-    const counts = { cat1: 0, cat2: 0, cat3: 0, total: list.length };
-    list.forEach(r => {
-      if (r.category === categories.cat1.label) counts.cat1++;
-      else if (r.category === categories.cat2.label) counts.cat2++;
-      else if (r.category === categories.cat3.label) counts.cat3++;
-    });
-
-    statRow.innerHTML = `
-      <div class="stat-chip">Total: ${counts.total}</div>
-      <div class="stat-chip">5 Juz: ${counts.cat1}</div>
-      <div class="stat-chip">10 Juz: ${counts.cat2}</div>
-      <div class="stat-chip">30 Juz: ${counts.cat3}</div>
-    `;
-
-    if (list.length === 0) {
-      content.innerHTML = `<div class="empty-state">No registrations yet. Once people submit the form, they'll show up here.</div>`;
-      return;
-    }
-
-    const rows = list.map((r, i) => `
-      <tr>
-        <td>${i + 1}</td>
-        <td>${r.id}</td>
-        <td>${r.name}</td>
-        <td>${r.age}</td>
-        <td>${r.gender}</td>
-        <td>${r.category}</td>
-        <td>${r.juzRange}</td>
-        <td>${r.phone}</td>
-        <td>${r.whatsapp}</td>
-        <td>${r.mosque}</td>
-        <td>${r.address}</td>
-        <td>${r.guardianName || '—'}</td>
-        <td>${r.guardianPhone || '—'}</td>
-        <td>${new Date(r.submittedAt).toLocaleString()}</td>
-      </tr>
-    `).join('');
-
-    content.innerHTML = `
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th><th>Reg. ID</th><th>Name</th><th>Age</th><th>Gender</th>
-              <th>Category</th><th>Juz Memorized</th><th>Phone</th><th>WhatsApp</th>
-              <th>Mosque/Madrasah</th><th>Address</th><th>Guardian</th><th>Guardian Phone</th><th>Submitted</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    `;
-  }
-
-  document.getElementById('exportCsv').addEventListener('click', async () => {
-    const list = await loadAll();
-    if (list.length === 0) { alert('No registrations to export yet.'); return; }
-    const headers = ['Reg ID','Name','Age','Gender','Category','Juz Memorized','Phone','WhatsApp','Mosque/Madrasah','Address','Guardian Name','Guardian Phone','Submitted At'];
-    const csvRows = [headers.join(',')];
-    list.forEach(r => {
-      const row = [r.id, r.name, r.age, r.gender, r.category, r.juzRange, r.phone, r.whatsapp, r.mosque, r.address, r.guardianName, r.guardianPhone, r.submittedAt]
-        .map(v => `"${String(v || '').replace(/"/g,'""')}"`);
-      csvRows.push(row.join(','));
-    });
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'lagos-quran-competition-2026-registrations.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  });
-
-  document.getElementById('clearAll').addEventListener('click', async () => {
-    if (!confirm('This will permanently delete ALL saved registrations. Continue?')) return;
-    await window.storage.delete(STORAGE_KEY, true);
-    await renderAdmin();
-  });
 </script>
 
 </body>
