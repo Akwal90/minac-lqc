@@ -821,7 +821,7 @@
       await sendToSheet(entry);
       showSuccess(entry);
     } catch (err) {
-      alert('Something went wrong saving your registration. Please check your internet connection and try again.');
+      alert('Something went wrong saving your registration.\n\nDetails: ' + (err && err.message ? err.message : err) + '\n\nPlease screenshot this and try again.');
       submitBtn.disabled = false;
       submitBtn.textContent = 'Complete Registration';
     }
